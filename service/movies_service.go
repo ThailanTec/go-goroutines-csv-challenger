@@ -16,17 +16,18 @@ type MovieServices interface {
 }
 
 type movieService struct {
-	movieRepo repositories.MovieRepository
+	movieRepo     repositories.MovieRepository
+	movieSQLXrepo repositories.MovieSQLXRepository
 }
 
-func NewMovieService(mr repositories.MovieRepository) movieService {
+func NewMovieService(mr repositories.MovieRepository, mrsqlx repositories.MovieSQLXRepository) movieService {
 	return movieService{
-		movieRepo: mr,
+		movieRepo:     mr,
+		movieSQLXrepo: mrsqlx,
 	}
 }
-
-func (ms *movieService) SaveMovie(data *domain.Movie) error {
-	err := ms.movieRepo.CreateMovies(data)
+func (ms *movieService) SaveMovies(data []*domain.Movie) error {
+	err := ms.movieSQLXrepo.CreateMovies(data)
 	if err != nil {
 		return err
 	}
@@ -43,29 +44,28 @@ func (ms *movieService) GetMoviesDB() ([]*domain.Movie, error) {
 	return users, nil
 }
 
-func (ms *movieService) Work(ctx context.Context, wg *sync.WaitGroup, movie <-chan *domain.Movie) {
+func (ms *movieService) Work(ctx context.Context, wg *sync.WaitGroup, moviesChan <-chan []*domain.Movie) {
 	defer wg.Done()
 
 	for {
 		select {
-		case movies, ok := <-movie:
+		case moviesBatch, ok := <-moviesChan:
 			if !ok {
 				log.Println("Canal fechado, encerrando goroutine")
 				return
 			}
 
-			err := ms.movieRepo.CreateMovies(movies)
+			err := ms.movieSQLXrepo.CreateMovies(moviesBatch) // Salva o batch de filmes
 			if err != nil {
-				log.Printf("Erro ao subir o filme %v: %v", movies.MovieID, err)
+				log.Printf("Erro ao salvar o batch de filmes: %v", err)
 				continue
 			}
 
-			log.Printf("Filme %v salvo com sucesso", movies.MovieID)
+			log.Printf("Batch de %d filmes salvo com sucesso", len(moviesBatch))
 
 		case <-ctx.Done():
 			log.Println("Contexto cancelado, encerrando goroutine")
 			return
 		}
 	}
-
 }

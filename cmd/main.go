@@ -20,21 +20,27 @@ func main() {
 		log.Fatal("Erro ao carregar o banco de dados", err)
 	}
 
+	sqlx, err := database.PostgresSQLXClient(cnf)
+	if err != nil {
+		log.Fatal("Erro ao carregar o banco de dados", err)
+	}
+
 	start := time.Now()
 
 	CSVrepo := repositories.NewCSVReader()
 	DBrepo := repositories.NewMovieRepository(db)
+	dbSQLX := repositories.NewMovieSQLXRepository(sqlx)
 
-	srv := service.NewMovieService(DBrepo)
+	srv := service.NewMovieService(DBrepo, dbSQLX)
 
-	movie, err := CSVrepo.ReadRecords("movie.csv")
+	movies, err := CSVrepo.ReadRecords("movie.csv")
 	if err != nil {
 		log.Fatal("Erro ao trazer os filmes patrão", err)
 	}
 
 	// go routines
 	chunkSize := 100 // Define o tamanho do chunk
-	ch := make(chan *domain.Movie, chunkSize)
+	ch := make(chan []*domain.Movie, chunkSize)
 	var wg sync.WaitGroup
 
 	for i := 0; i < 5; i++ {
@@ -43,11 +49,9 @@ func main() {
 	}
 
 	go func() {
-		chunks := chunkMovies(movie, chunkSize)
+		chunks := chunkMovies(movies, chunkSize)
 		for _, chunk := range chunks {
-			for _, m := range chunk {
-				ch <- m
-			}
+			ch <- chunk
 			log.Printf("Chunk de %d filmes enviado", len(chunk))
 		}
 		close(ch)
